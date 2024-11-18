@@ -13,6 +13,7 @@ type DFA struct {
 	star         int
 	question     int
 	builder      sync.Pool
+	foundPool    sync.Pool
 }
 
 func New(opts ...Option) *DFA {
@@ -22,12 +23,15 @@ func New(opts ...Option) *DFA {
 		trie:         NewTrie(),
 		invalidWords: make(map[string]struct{}),
 		builder:      sync.Pool{New: func() any { return new(strings.Builder) }},
+		foundPool: sync.Pool{New: func() any {
+			p := make([]string, 0, 500)
+			return &p
+		}},
 	}
-
 	if opt.star > 0 {
 		f.star = opt.star
 	} else {
-		f.star = 5
+		f.star = 1
 	}
 
 	if opt.question > 0 {
@@ -74,19 +78,23 @@ func (f *DFA) RemoveWords(words []string) {
 	}
 }
 
-func (f *DFA) Check(txt string) ([]string, bool) {
-	_, found, b := f.check(txt, false)
-	return found, b
+func (f *DFA) Check(txt string, src *[]string) bool {
+	_, b := f.check(txt, src, false)
+	return b
 }
 
-func (f *DFA) CheckAndReplace(txt string) (string, []string, bool) {
-	return f.check(txt, true)
+func (f *DFA) CheckAndReplace(txt string, src *[]string) (string, bool) {
+	return f.check(txt, src, true)
+
 }
 
-func (f *DFA) check(txt string, replace bool) (dist string, found []string, b bool) {
+func (f *DFA) check(txt string, src *[]string, replace bool) (string, bool) {
+	if src == nil {
+		src = f.foundPool.Get().(*[]string)
+		defer f.foundPool.Put(src)
+	}
 
 	str := []rune(txt)
-	result := txt
 	nodeMap := f.trie.Root().Child
 	start := -1
 	builder := f.builder.Get().(*strings.Builder)
@@ -107,12 +115,12 @@ func (f *DFA) check(txt string, replace bool) (dist string, found []string, b bo
 				start = i
 			}
 			if node.IsEnd {
-				found = append(found, string(str[start:i+1]))
+				*src = append(*src, string(str[start:i+1]))
 
 				if replace {
 					builder.WriteString(string(str[:start]))
 					builder.WriteString(f.replaceStr)
-					result = builder.String() + string(str[i+1:])
+					txt = builder.String() + string(str[i+1:])
 					builder.Reset()
 				}
 				start = -1
@@ -121,17 +129,17 @@ func (f *DFA) check(txt string, replace bool) (dist string, found []string, b bo
 				nodeMap = node.Child
 				if _, ok := nodeMap['?']; ok {
 					i += f.question
-					found = append(found, string(str[start:i+1]))
+					*src = append(*src, string(str[start:i+1]))
 					builder.WriteString(string(str[:start]))
 					builder.WriteString(f.replaceStr)
-					result = builder.String() + string(str[i+1:])
+					txt = builder.String() + string(str[i+1:])
 					builder.Reset()
 				} else if _, ok := nodeMap['*']; ok {
 					i += f.star
-					found = append(found, string(str[start:i+1]))
+					*src = append(*src, string(str[start:i+1]))
 					builder.WriteString(string(str[:start]))
 					builder.WriteString(f.replaceStr)
-					result = builder.String() + string(str[i+1:])
+					txt = builder.String() + string(str[i+1:])
 					builder.Reset()
 				}
 			}
@@ -143,9 +151,8 @@ func (f *DFA) check(txt string, replace bool) (dist string, found []string, b bo
 		i++
 	}
 
-	b = len(found) > 0
 	if replace {
-		dist = result
+		return txt, len(*src) > 0
 	}
-	return
+	return "", len(*src) > 0
 }

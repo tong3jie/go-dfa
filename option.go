@@ -2,7 +2,7 @@ package dfa
 
 const (
 	defaultInvalidWorlds = " ,~,!,@,#,$,%,^,&,*,(,),_,-,+,=,?,<,>,.,—,，,。,/,\\,|,《,》,？,;,:,：,',‘,；,“,¥,·"
-	defaultReplaceStr    = "****"
+	defaultReplaceStr    = "*"
 )
 
 type Option func(opts *Options)
